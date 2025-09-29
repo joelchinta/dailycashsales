@@ -66,15 +66,13 @@ headers = {
 }
 query_url = f"https://api.notion.com/v1/databases/{NOTION_DB_ID}/query"
 
-# Filter: today only and payment_method non-empty
+# Filter: today only and payment_method contains "Cash"
 payload = {
     "filter": {
         "and": [
             {"property": "created_at", "date": {"on_or_after": start_iso}},
             {"property": "created_at", "date": {"before": end_iso}},
-            {"property": "payment_method", "multi_select": {"is_not_empty": True}},
-            # If you need only Cash, replace the previous line with:
-            # {"property": "payment_method", "multi_select": {"contains": "Cash"}},
+            {"property": "payment_method", "multi_select": {"contains": "Cash"}},
         ]
     },
     "page_size": 100
@@ -164,7 +162,7 @@ while True:
 
 final_str = f"{total:.2f}"
 
-title = f"Total Sales for {start.strftime('%b %d, %Y')}"
+title = f"Total Cash Sales for {start.strftime('%b %d, %Y')}"
 msg = f"{final_str}"
 
 ok = send_pushover(title, msg, int(now_local.timestamp()))
