@@ -33,10 +33,10 @@ def gh_mask(value: str | None) -> None:
     if not value:
         return
     if os.getenv("GITHUB_ACTIONS") == "true":
-        try:
-            print(f"::add-mask::{value}")
-        except Exception:
-            pass
+        # Do not print secrets even in GitHub Actions logs.
+        # If masking is needed, handle it in CI workflow, not here.
+        pass
+
 
 # Mask all sensitive values
 for v in [NOTION_API_KEY, NOTION_DB_ID, PUSHOVER_TOKEN, PUSHOVER_USER,
