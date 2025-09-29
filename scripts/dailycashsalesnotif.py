@@ -34,7 +34,9 @@ def gh_mask(value: str | None) -> None:
         return
     if os.getenv("GITHUB_ACTIONS") == "true":
         try:
-            print(f"::add-mask::{value}")
+            # NOTE: Printing this secret value is *only* for GitHub Actions masking.
+            # Do not log secrets elsewhere!
+            print(f"::add-mask::{value}", flush=True)
         except Exception:
             pass
 
