@@ -39,7 +39,7 @@ payload = {
         "and": [
             {"property": "created_at", "date": {"on_or_after": start_iso}},
             {"property": "created_at", "date": {"before": end_iso}},
-            {"property": "payment_method", "multi_select": {"is_not_empty": True}},
+            {"property": "payment_method", "multi_select": {"contains": "Cash"}},
         ]
     },
     "page_size": 100
