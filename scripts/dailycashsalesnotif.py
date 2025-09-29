@@ -29,11 +29,12 @@ require("PUSHOVER_USER",  PUSHOVER_USER)
 def gh_mask(value: str | None):
     if not value:
         return
-    # Writes a mask directive so any future appearance is redacted
-    try:
-        print(f"::add-mask::{value}")
-    except Exception:
-        pass
+    # Only mask secrets in GitHub Actions environment to help redact logs
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        try:
+            print(f"::add-mask::{value}")
+        except Exception:
+            pass
 
 # Mask secrets and optional IDs just in case they get echoed by dependencies
 for v in [NOTION_API_KEY, NOTION_DB_ID, PUSHOVER_TOKEN, PUSHOVER_USER,
