@@ -1,9 +1,8 @@
 name: Daily Notion Total
 
 on:
-  # 23:59 Asia/Brunei is 15:59 UTC
   schedule:
-    - cron: "59 15 * * *"
+    - cron: "30 3 * * *"  # 11:30 Asia/Brunei
   workflow_dispatch: {}
 
 permissions:
