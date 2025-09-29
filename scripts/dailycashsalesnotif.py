@@ -121,8 +121,8 @@ while True:
 final_str = f"{total:.2f}"
 print(final_str)
 
-title = "Daily total"
-msg = f"Date: {start.date().isoformat()} Asia/Brunei\nTotal actual_money: {final_str}"
+title = "Total Cash Sales for {start.date().isoformat()}"
+msg = f"Cash Sales: {final_str}"
 ok = send_pushover(title, msg)
 if not ok:
     sys.exit(3)
