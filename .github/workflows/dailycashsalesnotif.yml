@@ -1,9 +1,8 @@
 name: Daily Cash Sales Notification
 
 on:
-  schedule:
-    - cron: "30 3 * * *"  # 11:30 Asia/Brunei
-  workflow_dispatch: {}
+  repository_dispatch:
+    types: [daily-cash-sales]
 
 permissions:
   contents: read
@@ -15,7 +14,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Optional but safe on minimal images
       - name: Ensure tzdata present
         run: sudo apt-get update && sudo apt-get install -y tzdata
 
