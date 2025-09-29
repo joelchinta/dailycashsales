@@ -37,4 +37,4 @@ jobs:
           PUSHOVER_PRIORITY: ${{ secrets.PUSHOVER_PRIORITY }}
           PUSHOVER_SOUND: ${{ secrets.PUSHOVER_SOUND }}
         run: |
-          python scripts/notion_daily_total.py
+          python scripts/dailycashsalesnotif.py
