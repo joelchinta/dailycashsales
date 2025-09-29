@@ -25,20 +25,24 @@ require("NOTION_DB_ID",   NOTION_DB_ID)
 require("PUSHOVER_TOKEN", PUSHOVER_TOKEN)
 require("PUSHOVER_USER",  PUSHOVER_USER)
 
-# ── Mask helper for GitHub Actions logs
-def gh_mask(value: str | None):
+def gh_mask(value: str | None) -> None:
+    """
+    Emit GitHub Actions mask directive only when running in Actions.
+    Never print secrets in other environments.
+    """
     if not value:
         return
-    # Only mask secrets in GitHub Actions environment to help redact logs
     if os.getenv("GITHUB_ACTIONS") == "true":
         try:
             print(f"::add-mask::{value}")
         except Exception:
             pass
 
-# Mask secrets and optional IDs just in case they get echoed by dependencies
+# Mask all sensitive values
 for v in [NOTION_API_KEY, NOTION_DB_ID, PUSHOVER_TOKEN, PUSHOVER_USER,
-          PUSHOVER_DEVICE, PUSHOVER_PRIORITY, PUSHOVER_SOUND]:
+          os.getenv("PUSHOVER_DEVICE"),
+          os.getenv("PUSHOVER_PRIORITY"),
+          os.getenv("PUSHOVER_SOUND")]:
     gh_mask(v)
 
 # ── Date window in Asia/Brunei
