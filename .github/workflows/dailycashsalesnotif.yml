@@ -1,4 +1,4 @@
-name: Daily Notion Total
+name: Daily Cash Sales Notification
 
 on:
   schedule:
