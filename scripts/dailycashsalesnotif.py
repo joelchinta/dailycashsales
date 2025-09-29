@@ -121,8 +121,8 @@ while True:
 final_str = f"{total:.2f}"
 print(final_str)
 
-title = "Total Cash Sales for {start.date().isoformat()}"
-msg = f"Cash Sales: {final_str}"
+title = f"Total Cash Sales for {start.strftime('%b %d, %Y')}"
+msg = f"{final_str}"
 ok = send_pushover(title, msg)
 if not ok:
     sys.exit(3)
