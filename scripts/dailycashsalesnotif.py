@@ -83,14 +83,17 @@ payload = {
 def backoff(attempt):
     time.sleep(min(2 ** attempt, 10))
 
-def send_pushover(title: str, message: str, timestamp: int) -> bool:
+def send_pushover(title: str, message: str):
     url = "https://api.pushover.net/1/messages.json"
     data = {
         "token": PUSHOVER_TOKEN,
         "user": PUSHOVER_USER,
         "title": title,
         "message": message,
-        "timestamp": timestamp,
+        "timestamp": int(now_local.timestamp()),
+        # 👇 Add WhatsApp group deep link here
+        "url": "https://chat.whatsapp.com/Futa4ZropmmG18DYnE5tmw",
+        "url_title": "Open WhatsApp Group"
     }
     if PUSHOVER_DEVICE:
         data["device"] = PUSHOVER_DEVICE
@@ -100,24 +103,20 @@ def send_pushover(title: str, message: str, timestamp: int) -> bool:
         data["sound"] = PUSHOVER_SOUND
 
     attempt = 0
-    MAX_RETRIES = 5
     while True:
         try:
             r = requests.post(url, data=data, timeout=15)
             if r.status_code == 429:
-                if attempt >= MAX_RETRIES:
-                    print("Pushover rate limit exceeded", file=sys.stderr)
-                    return False
                 backoff(attempt); attempt += 1; continue
             r.raise_for_status()
             js = r.json()
             if js.get("status") != 1:
-                print("Pushover error", file=sys.stderr)
+                print(f"Pushover error: {js}", file=sys.stderr)
                 return False
             return True
-        except requests.RequestException:
-            if attempt >= MAX_RETRIES:
-                print("Pushover request failed", file=sys.stderr)
+        except requests.RequestException as e:
+            if attempt >= 3:
+                print(f"Pushover request failed: {e}", file=sys.stderr)
                 return False
             backoff(attempt); attempt += 1
 
