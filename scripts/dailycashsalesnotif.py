@@ -14,6 +14,10 @@ PUSHOVER_DEVICE   = os.getenv("PUSHOVER_DEVICE")    # optional
 PUSHOVER_PRIORITY = os.getenv("PUSHOVER_PRIORITY")  # optional
 PUSHOVER_SOUND    = os.getenv("PUSHOVER_SOUND")     # optional
 
+# WhatsApp deep link for the target group
+WHATSAPP_URL       = os.getenv("WHATSAPP_URL", "https://chat.whatsapp.com/Futa4ZropmmG18DYnE5tmw")
+WHATSAPP_URL_TITLE = os.getenv("WHATSAPP_URL_TITLE", "Open WhatsApp Group")
+
 # ── Fail fast if required secrets missing
 def require(name, val):
     if not val:
@@ -34,8 +38,6 @@ def gh_mask(value: str | None) -> None:
         return
     if os.getenv("GITHUB_ACTIONS") == "true":
         try:
-            # NOTE: Printing this secret value is *only* for GitHub Actions masking.
-            # Do not log secrets elsewhere!
             print(f"::add-mask::{value}", flush=True)
         except Exception:
             pass
@@ -46,9 +48,11 @@ for v in [
     NOTION_DB_ID,
     PUSHOVER_TOKEN,
     PUSHOVER_USER,
-    os.getenv("PUSHOVER_DEVICE"),
-    os.getenv("PUSHOVER_PRIORITY"),
-    os.getenv("PUSHOVER_SOUND"),
+    PUSHOVER_DEVICE,
+    PUSHOVER_PRIORITY,
+    PUSHOVER_SOUND,
+    WHATSAPP_URL,
+    WHATSAPP_URL_TITLE,
 ]:
     gh_mask(v)
 
@@ -69,6 +73,8 @@ headers = {
 query_url = f"https://api.notion.com/v1/databases/{NOTION_DB_ID}/query"
 
 # Filter: today only and payment_method contains "Cash"
+# If you want any nonempty payment_method instead, replace the third clause with:
+# {"property": "payment_method", "multi_select": {"is_not_empty": True}}
 payload = {
     "filter": {
         "and": [
@@ -83,17 +89,16 @@ payload = {
 def backoff(attempt):
     time.sleep(min(2 ** attempt, 10))
 
-def send_pushover(title: str, message: str):
+def send_pushover(title: str, message: str, timestamp: int) -> bool:
     url = "https://api.pushover.net/1/messages.json"
     data = {
         "token": PUSHOVER_TOKEN,
         "user": PUSHOVER_USER,
         "title": title,
         "message": message,
-        "timestamp": int(now_local.timestamp()),
-        # 👇 Add WhatsApp group deep link here
-        "url": "https://chat.whatsapp.com/Futa4ZropmmG18DYnE5tmw",
-        "url_title": "Open WhatsApp Group"
+        "timestamp": timestamp,
+        "url": WHATSAPP_URL,
+        "url_title": WHATSAPP_URL_TITLE,
     }
     if PUSHOVER_DEVICE:
         data["device"] = PUSHOVER_DEVICE
@@ -103,20 +108,24 @@ def send_pushover(title: str, message: str):
         data["sound"] = PUSHOVER_SOUND
 
     attempt = 0
+    MAX_RETRIES = 5
     while True:
         try:
             r = requests.post(url, data=data, timeout=15)
             if r.status_code == 429:
+                if attempt >= MAX_RETRIES:
+                    print("Pushover rate limit exceeded", file=sys.stderr)
+                    return False
                 backoff(attempt); attempt += 1; continue
             r.raise_for_status()
             js = r.json()
             if js.get("status") != 1:
-                print(f"Pushover error: {js}", file=sys.stderr)
+                print("Pushover error", file=sys.stderr)
                 return False
             return True
-        except requests.RequestException as e:
-            if attempt >= 3:
-                print(f"Pushover request failed: {e}", file=sys.stderr)
+        except requests.RequestException:
+            if attempt >= MAX_RETRIES:
+                print("Pushover request failed", file=sys.stderr)
                 return False
             backoff(attempt); attempt += 1
 
