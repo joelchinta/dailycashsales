@@ -27,4 +27,4 @@ jobs:
           PUSHOVER_DEVICE: ${{ secrets.PUSHOVER_DEVICE }}
           PUSHOVER_PRIORITY: ${{ secrets.PUSHOVER_PRIORITY }}
           PUSHOVER_SOUND: ${{ secrets.PUSHOVER_SOUND }}
-        run: python3 weekly_gomamam_sales.py
+        run: python3 scripts/weekly_online_sales.py
