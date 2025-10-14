@@ -1,0 +1,30 @@
+name: Weekly GM Total Sales
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [run-weekly-gomamam-sales]
+
+jobs:
+  weekly-sales:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
+
+      - env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DB_ID_ONLINE_SALES: ${{ secrets.NOTION_DB_ID_ONLINE_SALES }}
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
+          PUSHOVER_DEVICE: ${{ secrets.PUSHOVER_DEVICE }}
+          PUSHOVER_PRIORITY: ${{ secrets.PUSHOVER_PRIORITY }}
+          PUSHOVER_SOUND: ${{ secrets.PUSHOVER_SOUND }}
+        run: python3 weekly_gomamam_sales.py
