@@ -3,7 +3,7 @@ name: Weekly GM Total Sales
 on:
   workflow_dispatch:
   repository_dispatch:
-    types: [run-weekly-gomamam-sales]
+    types: [run-weekly-online-sales]
 
 jobs:
   weekly-sales:
