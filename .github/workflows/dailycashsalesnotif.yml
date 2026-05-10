@@ -3,6 +3,7 @@ name: Daily Cash Sales Notification
 on:
   repository_dispatch:
     types: [daily-cash-sales]
+  workflow_dispatch:
 
 permissions:
   contents: read
