@@ -62,8 +62,8 @@ query_url = f"https://api.notion.com/v1/databases/{NOTION_DB_ID}/query"
 payload = {
     "filter": {
         "and": [
-            {"property": "created_at", "date": {"on_or_after": start_iso}},
-            {"property": "created_at", "date": {"before": end_iso}},
+            {"timestamp": "created_time", "created_time": {"on_or_after": start_iso}},
+            {"timestamp": "created_time", "created_time": {"before": end_iso}},
             {"property": "payment_method", "multi_select": {"contains": "Cash"}},
         ]
     },
