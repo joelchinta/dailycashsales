@@ -21,7 +21,7 @@ jobs:
 
       - env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-          NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
+          NOTION_DB_ID_ONLINE_SALES: ${{ secrets.NOTION_DB_ID_ONLINE_SALES }}
           PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
           PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
           PUSHOVER_DEVICE: ${{ secrets.PUSHOVER_DEVICE }}

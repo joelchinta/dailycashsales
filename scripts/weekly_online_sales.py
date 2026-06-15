@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 # ── Config from env
 NOTION_API_KEY = os.getenv("NOTION_API_KEY")
-NOTION_DB_ID   = os.getenv("NOTION_DB_ID")
+NOTION_DB_ID   = os.getenv("NOTION_DB_ID_ONLINE_SALES")
 
 PUSHOVER_TOKEN    = os.getenv("PUSHOVER_TOKEN")
 PUSHOVER_USER     = os.getenv("PUSHOVER_USER")
