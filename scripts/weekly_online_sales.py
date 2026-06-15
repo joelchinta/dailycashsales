@@ -3,6 +3,7 @@ import os, sys, time
 import requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from collections import defaultdict
 
 # ── Config from env
 NOTION_API_KEY = os.getenv("NOTION_API_KEY")
@@ -10,15 +11,10 @@ NOTION_DB_ID   = os.getenv("NOTION_DB_ID_ONLINE_SALES")
 
 PUSHOVER_TOKEN    = os.getenv("PUSHOVER_TOKEN")
 PUSHOVER_USER     = os.getenv("PUSHOVER_USER")
-PUSHOVER_DEVICE   = os.getenv("PUSHOVER_DEVICE")    # optional
-PUSHOVER_PRIORITY = os.getenv("PUSHOVER_PRIORITY")  # optional
-PUSHOVER_SOUND    = os.getenv("PUSHOVER_SOUND")     # optional
+PUSHOVER_DEVICE   = os.getenv("PUSHOVER_DEVICE")
+PUSHOVER_PRIORITY = os.getenv("PUSHOVER_PRIORITY")
+PUSHOVER_SOUND    = os.getenv("PUSHOVER_SOUND")
 
-# WhatsApp deep link for the target group
-WHATSAPP_URL       = os.getenv("WHATSAPP_URL", "https://chat.whatsapp.com/Futa4ZropmmG18DYnE5tmw")
-WHATSAPP_URL_TITLE = os.getenv("WHATSAPP_URL_TITLE", "Open WhatsApp Group")
-
-# ── Fail fast if required secrets missing
 def require(name, val):
     if not val:
         print(f"Missing {name}", file=sys.stderr)
@@ -27,28 +23,29 @@ def require(name, val):
 require("NOTION_API_KEY", NOTION_API_KEY)
 require("NOTION_DB_ID_ONLINE_SALES", NOTION_DB_ID)
 require("PUSHOVER_TOKEN", PUSHOVER_TOKEN)
-require("PUSHOVER_USER",  PUSHOVER_USER)
+require("PUSHOVER_USER", PUSHOVER_USER)
 
 def gh_mask(value: str | None) -> None:
-    if not value:
-        return
-    if os.getenv("GITHUB_ACTIONS") == "true":
+    if value and os.getenv("GITHUB_ACTIONS") == "true":
         try:
             print(f"::add-mask::{value}", flush=True)
         except Exception:
             pass
 
-# Mask secrets
-for v in [NOTION_API_KEY, NOTION_DB_ID, PUSHOVER_TOKEN, PUSHOVER_USER]:
+for v in [
+    NOTION_API_KEY, NOTION_DB_ID,
+    PUSHOVER_TOKEN, PUSHOVER_USER,
+    PUSHOVER_DEVICE, PUSHOVER_PRIORITY, PUSHOVER_SOUND,
+]:
     gh_mask(v)
 
-# ── Date window in Asia/Brunei
+# ── Compute previous week window (Mon-Sun) in Asia/Brunei
 tz = ZoneInfo("Asia/Brunei")
-now_local = datetime.now(tz)
-start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-end   = start + timedelta(days=1)
-start_iso = start.isoformat()
-end_iso   = end.isoformat()
+today = datetime.now(tz)
+last_monday = (today - timedelta(days=today.weekday() + 7)).replace(hour=0, minute=0, second=0, microsecond=0)
+last_sunday = last_monday + timedelta(days=6, hours=23, minutes=59, seconds=59)
+start_iso = last_monday.date().isoformat()
+end_iso   = last_sunday.date().isoformat()
 
 # ── Notion setup
 headers = {
@@ -57,18 +54,6 @@ headers = {
     "Content-Type": "application/json",
 }
 query_url = f"https://api.notion.com/v1/databases/{NOTION_DB_ID}/query"
-
-# Filter: today only and payment_method contains "Cash"
-payload = {
-    "filter": {
-        "and": [
-            {"timestamp": "created_time", "created_time": {"on_or_after": start_iso}},
-            {"timestamp": "created_time", "created_time": {"before": end_iso}},
-            {"property": "payment_method", "multi_select": {"contains": "Cash"}},
-        ]
-    },
-    "page_size": 100
-}
 
 def backoff(attempt):
     time.sleep(min(2 ** attempt, 10))
@@ -80,15 +65,43 @@ def log_notion_error(resp):
         details = resp.text
     print(f"Notion request failed: HTTP {resp.status_code} {details}", file=sys.stderr)
 
-def delete_page(page_id: str):
-    url = f"https://api.notion.com/v1/pages/{page_id}"
-    try:
-        r = requests.patch(url, headers=headers, json={"archived": True}, timeout=15)
-        r.raise_for_status()
-        return True
-    except Exception as e:
-        print(f"Failed to delete page {page_id}: {e}", file=sys.stderr)
-        return False
+def query_notion():
+    payload = {
+        "filter": {
+            "and": [
+                {"property": "Order Date", "date": {"on_or_after": start_iso}},
+                {"property": "Order Date", "date": {"on_or_before": end_iso}},
+            ]
+        },
+        "page_size": 100
+    }
+    results, cursor, attempt = [], None, 0
+    MAX_RETRIES = 5
+    while True:
+        body = dict(payload)
+        if cursor:
+            body["start_cursor"] = cursor
+        try:
+            r = requests.post(query_url, headers=headers, json=body, timeout=30)
+            if r.status_code == 429:
+                if attempt >= MAX_RETRIES:
+                    print("Notion rate limit retries exhausted", file=sys.stderr)
+                    sys.exit(2)
+                backoff(attempt); attempt += 1; continue
+            r.raise_for_status()
+            data = r.json()
+        except requests.HTTPError:
+            log_notion_error(r)
+            sys.exit(2)
+        except requests.RequestException as e:
+            print(f"Notion request failed: {e}", file=sys.stderr)
+            sys.exit(2)
+        results.extend(data.get("results", []))
+        if data.get("has_more"):
+            cursor = data.get("next_cursor")
+        else:
+            break
+    return results
 
 def send_pushover(title: str, message: str, timestamp: int) -> bool:
     url = "https://api.pushover.net/1/messages.json"
@@ -98,134 +111,102 @@ def send_pushover(title: str, message: str, timestamp: int) -> bool:
         "title": title,
         "message": message,
         "timestamp": timestamp,
-        "url": WHATSAPP_URL,
-        "url_title": WHATSAPP_URL_TITLE,
     }
-    if PUSHOVER_DEVICE: data["device"] = PUSHOVER_DEVICE
-    if PUSHOVER_PRIORITY: data["priority"] = PUSHOVER_PRIORITY
-    if PUSHOVER_SOUND: data["sound"] = PUSHOVER_SOUND
+    if PUSHOVER_DEVICE:
+        data["device"] = PUSHOVER_DEVICE
+    if PUSHOVER_PRIORITY:
+        data["priority"] = PUSHOVER_PRIORITY
+    if PUSHOVER_SOUND:
+        data["sound"] = PUSHOVER_SOUND
 
-    attempt = 0
-    MAX_RETRIES = 5
+    attempt, MAX_RETRIES = 0, 5
     while True:
         try:
             r = requests.post(url, data=data, timeout=15)
             if r.status_code == 429:
-                if attempt >= MAX_RETRIES: return False
+                if attempt >= MAX_RETRIES:
+                    return False
                 backoff(attempt); attempt += 1; continue
             r.raise_for_status()
+            if r.json().get("status") != 1:
+                return False
             return True
         except requests.RequestException:
-            if attempt >= MAX_RETRIES: return False
+            if attempt >= MAX_RETRIES:
+                return False
             backoff(attempt); attempt += 1
 
-# ── Run
-cursor = None
-attempt = 0
-MAX_RETRIES = 5
+def parse_order_date(date_str):
+    if "T" in date_str:
+        return datetime.fromisoformat(date_str).astimezone(tz)
+    return datetime.fromisoformat(date_str + "T00:00:00+08:00")
 
-seen_receipts = {}  # receipt_number -> (created_at_val, page_id, amount)
-pages_to_delete = []
+def property_text(prop):
+    p_type = prop.get("type")
+    if p_type == "select" and prop.get("select"):
+        return prop["select"].get("name", "")
+    if p_type == "status" and prop.get("status"):
+        return prop["status"].get("name", "")
+    if p_type == "multi_select":
+        return ", ".join(item.get("name", "") for item in prop.get("multi_select", []))
+    if p_type == "title":
+        return "".join(item.get("plain_text", "") for item in prop.get("title", []))
+    if p_type == "rich_text":
+        return "".join(item.get("plain_text", "") for item in prop.get("rich_text", []))
+    return ""
 
-while True:
-    body = dict(payload)
-    if cursor:
-        body["start_cursor"] = cursor
-    try:
-        resp = requests.post(query_url, headers=headers, json=body, timeout=30)
-        if resp.status_code == 429:
-            if attempt >= MAX_RETRIES:
-                print("Notion rate limit retries exhausted", file=sys.stderr)
-                sys.exit(2)
-            backoff(attempt); attempt += 1; continue
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.HTTPError:
-        log_notion_error(resp)
-        sys.exit(2)
-    except requests.RequestException as e:
-        print(f"Notion request failed: {e}", file=sys.stderr)
-        sys.exit(2)
-
-    for page in data.get("results", []):
-        page_id = page["id"]
+def aggregate(results, source_name, reduction_rate):
+    daily_totals = defaultdict(float)
+    for page in results:
         props = page.get("properties", {})
-        
-        # 1. Get receipt number (try common names if 'receipt_number' fails)
-        receipt_val = None
-        for prop_name in ["receipt_number", "Receipt Number", "Receipt #"]:
-            prop = props.get(prop_name, {})
-            p_type = prop.get("type")
-            if p_type == "title":
-                t = prop.get("title", [])
-                if t: receipt_val = t[0].get("plain_text")
-            elif p_type == "rich_text":
-                r = prop.get("rich_text", [])
-                if r: receipt_val = r[0].get("plain_text")
-            elif p_type == "number":
-                receipt_val = str(prop.get("number"))
-            if receipt_val: break
+        if property_text(props.get("Source", {})) != source_name:
+            continue
 
-        # 2. Get creation time for comparison
-        created_at_val = None
-        # Try 'created_at' property first
-        ca_prop = props.get("created_at", {})
-        if ca_prop.get("type") == "date":
-            d = ca_prop.get("date", {})
-            if d: created_at_val = d.get("start")
-        # Fallback to system created_time
-        if not created_at_val:
-            created_at_val = page.get("created_time")
+        date_prop = props.get("Order Date", {})
+        amount_prop = props.get("Order Amount", {})
+        if date_prop.get("type") != "date" or not date_prop.get("date"):
+            continue
+        date_str = date_prop["date"].get("start")
+        if not date_str:
+            continue
+        date = parse_order_date(date_str)
+        date_key = date.strftime("%d-%m-%Y")
 
-        # 3. Get amount
-        actual = props.get("actual_money", {})
         val = None
-        if actual.get("type") == "formula":
-            f = actual.get("formula", {})
-            if f.get("type") == "number": val = f.get("number")
-        if val is None and actual.get("type") == "number":
-            val = actual.get("number")
-        amount = float(val) if val is not None else 0.0
+        if amount_prop.get("type") == "number":
+            val = amount_prop.get("number")
+        elif amount_prop.get("type") == "formula":
+            f = amount_prop.get("formula", {})
+            if f.get("type") == "number":
+                val = f.get("number")
+        if not isinstance(val, (int, float)):
+            continue
 
-        if receipt_val:
-            if receipt_val in seen_receipts:
-                prev_created_at, prev_page_id, prev_amount = seen_receipts[receipt_val]
-                # "delete the duplicate on, the latest one, keep the older one"
-                # If current is older than what we've seen, keep current and delete previous
-                if created_at_val < prev_created_at:
-                    pages_to_delete.append(prev_page_id)
-                    seen_receipts[receipt_val] = (created_at_val, page_id, amount)
-                else:
-                    # Current is newer (or same), delete current
-                    pages_to_delete.append(page_id)
-            else:
-                seen_receipts[receipt_val] = (created_at_val, page_id, amount)
-        else:
-            # No receipt number, treat as unique to be safe
-            seen_receipts[f"unique_{page_id}"] = (created_at_val, page_id, amount)
+        daily_totals[date_key] += val * (1 - reduction_rate)
+    return dict(sorted(daily_totals.items()))
 
-    if data.get("has_more"):
-        cursor = data.get("next_cursor")
-    else:
-        break
+weekly_data = query_notion()
 
-# ── Perform Deletions
-for pid in pages_to_delete:
-    print(f"Deleting duplicate page: {pid}")
-    delete_page(pid)
+gomamam_daily = aggregate(weekly_data, "GoMamam", 0.20)
+heydomo_daily = aggregate(weekly_data, "HeyDomo", 0.12)
 
-# ── Final Calculation
-total = sum(item[2] for item in seen_receipts.values())
-final_str = f"{total:.2f}"
+gomamam_total = sum(gomamam_daily.values())
+heydomo_total = sum(heydomo_daily.values())
 
-title = f"Total Cash Sales for {start.strftime('%b %d, %Y')}"
-msg = f"{final_str}"
+def format_block(title, daily_map, total):
+    lines = [f"{title}"]
+    for date, val in daily_map.items():
+        lines.append(f"{date} - ${val:,.2f}")
+    lines.append(f"Total: ${total:,.2f}")
+    return "\n".join(lines)
 
-if pages_to_delete:
-    msg += f"\n(Cleaned up {len(pages_to_delete)} duplicates)"
+body = (
+    f"{format_block('GoMamam Online Sales', gomamam_daily, gomamam_total)}\n\n"
+    f"{format_block('HeyDomo Online Sales', heydomo_daily, heydomo_total)}"
+)
 
-ok = send_pushover(title, msg, int(now_local.timestamp()))
-if not ok:
+title = f"Weekly Online Sales Summary ({last_monday.strftime('%d-%m-%Y')} to {last_sunday.strftime('%d-%m-%Y')})"
+
+if not send_pushover(title, body, int(datetime.now(tz).timestamp())):
     sys.exit(3)
-
-print(f"Done. Processed {len(seen_receipts)} unique receipts. Deleted {len(pages_to_delete)} duplicates.")
+sys.exit(0)
