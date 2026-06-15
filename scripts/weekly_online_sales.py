@@ -25,7 +25,7 @@ def require(name, val):
         sys.exit(1)
 
 require("NOTION_API_KEY", NOTION_API_KEY)
-require("NOTION_DB_ID",   NOTION_DB_ID)
+require("NOTION_DB_ID_ONLINE_SALES", NOTION_DB_ID)
 require("PUSHOVER_TOKEN", PUSHOVER_TOKEN)
 require("PUSHOVER_USER",  PUSHOVER_USER)
 
@@ -72,6 +72,13 @@ payload = {
 
 def backoff(attempt):
     time.sleep(min(2 ** attempt, 10))
+
+def log_notion_error(resp):
+    try:
+        details = resp.json()
+    except ValueError:
+        details = resp.text
+    print(f"Notion request failed: HTTP {resp.status_code} {details}", file=sys.stderr)
 
 def delete_page(page_id: str):
     url = f"https://api.notion.com/v1/pages/{page_id}"
@@ -127,11 +134,17 @@ while True:
     try:
         resp = requests.post(query_url, headers=headers, json=body, timeout=30)
         if resp.status_code == 429:
-            if attempt >= MAX_RETRIES: sys.exit(2)
+            if attempt >= MAX_RETRIES:
+                print("Notion rate limit retries exhausted", file=sys.stderr)
+                sys.exit(2)
             backoff(attempt); attempt += 1; continue
         resp.raise_for_status()
         data = resp.json()
-    except requests.RequestException:
+    except requests.HTTPError:
+        log_notion_error(resp)
+        sys.exit(2)
+    except requests.RequestException as e:
+        print(f"Notion request failed: {e}", file=sys.stderr)
         sys.exit(2)
 
     for page in data.get("results", []):
